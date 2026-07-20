@@ -1,4 +1,5 @@
 import asyncio
+import time
 import logging
 import sys
 import os
@@ -62,9 +63,32 @@ async def handle_contact(message: Message) -> None:
         save_user(message.from_user.id, message.contact.phone_number)
         await message.answer("Rahmat! Raqamingiz qabul qilindi. Endi bemalol xabar, rasm, video yoki fayllarni menga yuboring, barchasini adminga yetkazaman.", reply_markup=ReplyKeyboardRemove())
 
+admin_last_message_time = {}
+bot_last_autoreply_time = {}
+
 # Telegram Business orqali shaxsiy akkauntga kelgan xabarlarga javob berish
 @dp.business_message()
 async def business_message_handler(message: Message) -> None:
+    current_time = time.time()
+    chat_id = message.chat.id
+    
+    # Agar xabar admin tomonidan yozilgan bo'lsa (yoki adminga tegishli bo'lsa)
+    if message.from_user.id != chat_id:
+        admin_last_message_time[chat_id] = current_time
+        return
+
+    # Foydalanuvchi yozdi
+    last_admin_time = admin_last_message_time.get(chat_id, 0)
+    last_autoreply_time = bot_last_autoreply_time.get(chat_id, 0)
+    
+    # Agar admin oxirgi 1 soat (3600 soniya) ichida javob yozgan bo'lsa, aralashmaydi
+    if current_time - last_admin_time < 3600:
+        return
+        
+    # Agar bot o'zi oxirgi 1 soat ichida javob yuborgan bo'lsa, yana qaytadan yubormaydi (spam bo'lmasligi uchun)
+    if current_time - last_autoreply_time < 3600:
+        return
+
     # Bu yerda sizning shaxsiy lichkangizga yozgan odamga yuboriladigan avtomatik xabar
     auto_reply_text = (
         "Assalomu alaykum! Men hozir bandman yoki offlineman xabaringizni ko'rishim bilan javob qaytaraman. 🙂\n\n"
@@ -73,6 +97,7 @@ async def business_message_handler(message: Message) -> None:
     
     try:
         await message.answer(auto_reply_text)
+        bot_last_autoreply_time[chat_id] = current_time
         logging.info(f"Yangi xabarga avto-javob yuborildi. Kimdan: {message.from_user.full_name}")
     except Exception as e:
         logging.error(f"Xabar yuborishda xatolik yuz berdi: {e}")
